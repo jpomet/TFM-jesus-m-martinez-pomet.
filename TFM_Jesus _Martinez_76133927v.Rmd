@@ -1,0 +1,906 @@
+---
+title: "TFM Evaluación del estado de conservación del Cormorán Moñudo Gulosus aristotelis en Portugal utilizando los indicadores comunes OSPAR."
+author: "Jesus M. Martínez Pomet"
+date: "20/06/2023"
+output:
+  word_document: default
+
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+
+```
+
+
+```{r}
+library(readxl)
+library (imputeTS)
+library(MASS)
+library(AER)
+require(popbio)
+require(visreg)
+library(stringr)
+library(forecast)
+
+```
+
+```{r}
+wd<-"C:/Users/jesus/Desktop/master bioestadistica/TFM"
+
+setwd(wd)
+
+```
+
+
+En primer lugar, comenzaremos por leer la base de datos, renombrar cada una de las variables y transformarlas cada una a su tipo correspondiente
+
+```{r}
+
+df <- read_excel("Gul_ari_berlengas.xlsx")
+
+df$ocp<-df$`N ninhos ocupados`
+df$prd<- df$Produtividade
+df$Produtividade= NULL
+df$`N ninhos ocupados`= NULL
+as.numeric(df$ocp)
+as.numeric(df$prd)
+as.numeric(df$Año)
+```
+
+Como podemos ver, nuestro data set corresponde a una serie temporal para la especie *Gulosus aristotelis* copuesta por dos variables; `ocp` que define los parámetros de abundancia medida en nidos ocupados, y  `prd` que define parámetros de reproducción medido en productividad media anual. La colonia se encuentra localizada en las Islas Berlengas y es representativa para toda la población de la especie en Portugal continental, por ser esta la colonia más importante del territorio.
+
+Procederemos a realizar los análisis pertinentes:
+
+# Análisis de la tendencia de individuos reproductores:
+
+
+En primer lugar, sabemos que disponemos de la abundancia anual reproductora para la especie en la colonia objeto de estudio, definida en la variable `ocp` que hace referencia al número de nidos ocupados.
+
+
+```{r}
+sum(is.na(df$ocp))
+```
+
+Por tanto, siguiendo las indicaciones *Las observaciones anuales que falten deberán interpolarse a partir de los datos observados utilizando modelos estadísticos*. 
+
+En primer lugar, analizaremos los datos faltantes para la serie temporal, siguiendo las indicaciones de la guideline (OSPAR, 2017a)  Las observaciones anuales que falten deberán interpolarse a partir de los datos observados utilizando modelos estadísticos, para ello realizaremos la imputación de valores.  El método indicado para ser usado preferencialmente es el método Thomas (1993), pero cabe destacar que dicho método no se considera adecuado, debido a que apenas tenemos datos para una colonia. Este método fue desarrollado para la realización de estimas poblacionales sobre diferentes especies de Ardeidas en Reino Unido, donde para algunas colonias existían datos faltantes o insuficientes, Thomas desarrolla el método para imputar estos datos basándose en las comparaciones entre colonias con datos y colonias sin datos y asumiendo que la abundancia anual de parejas reproductoras seguirá una tendencia similar en todas las colonias, obteniendo así datos faltantes basados en datos presentes. 
+
+En alternativa, para imputar los datos faltantes lo haremos mediante el método de Interpolación Lineal (Chapra & Canale, 1998), que responde a la ecuación (1)  
+
+
+## Imputación de valores
+
+
+
+```{r}
+df$ocp_o<- df$ocp
+df$ocp<- na_interpolation(df$ocp, option = "linear")
+
+ggplot_na_imputations(df$ocp_o, df$ocp, title = "Valores imputados", subtitle = "Visualización de las sustituciones de valores faltantes",   xlab = "Tiempo", ylab = "Valor",label_known = "valores conocidos",label_imputations = "valores imputados", theme = ggplot2::theme_minimal())
+
+```
+Ecucación 1
+
+\[
+f(x) = f(x_0) + \left(\frac{{f(x_1) - f(x_0)}}{{x_1 - x_0}}\right) \cdot (x - x_0) \quad 
+\] 
+
+Donde x es la variable independiente, x1 y xo son valores conocidos de la variable independiente y f(x) es el valor de la variable dependiente para un valor x de la variable independiente. El método estima el valor de los datos basándose en los dos puntos de datos adyacentes a los puntos que deben interpolarse en la secuencia de datos unidimensional (Huang, 2021)
+Hay otros métodos que podrían ser utilizados como el método MICE Multivariate Imputation by Chained Equations (Raghunathan et al. 2001). En el procedimiento MICE ejecuta una serie de modelos de regresión donde cada variable imputada funciona como dependiente en un modelo de regresión y todas las demás variables son variables independientes, por tanto, cada variable con datos ausentes se modela condicionalmente sobre las demás variables de los datos (Azur et al., 2011), por tanto, las imputaciones son condicionales y son derivadas de modelos estadísticos ajustados a los datos observados e imputaciones previas. Estas imputaciones condicionales se realizan de forma secuencial, una variable a la vez, hasta que se hayan imputado todos los valores faltantes. 
+
+
+## Abundancia relativa
+
+Cabe destacar que para la especie objeto de estudio no es posible realizar un censo completo de la población reproductora en Portugal debido la inaccesibilidad de estos lugares, que dificultan la detección de todas las plataformas de cría. Es por ello que se opta por la realización de un seguimiento de una muestra representativa de la población, en este caso la colonia localizada en la Isla Berlenga que permite la realización del seguimiento desde tierra.
+De una manera más técnica, podemos decir que nuestro método de muestreo se basa en una replicación espacial de los conteos Spatially Replicated Counts donde se consideran el número de individuos o parejas detectadas durante T visitas a cada unidad de muestreo R. (Murray & Sandercock, 2020 )
+
+Todo ello se verifica con la siguiente ecuación:
+
+$E(c)= pN$
+
+Donde $E(C)$ es el numero esperado de individuos de la especie durante el muestreo, $N$ es el número real de individuos de la población en el momento del muestreo y $p$ es la porporción del número del individuos registrados. (Johnson, 1995). 
+
+El objetivo de nuestro trabajo se centra fundamentalmente en evaluar el estado de conservación de la población y por ello no será necesario obtener **p**, que nos devolvería la población total **N** por tanto, nos centraremos un cálculo más simple y aplicable a los objetivos de nuestro trabajo y que nos permita evaluar la tendencia de la población total mediante la obtención de un índice de abundancia relativa, tal y como es indicado en la guideline como métrica del indicador B1: 
+
+$AbundanciaRelativa = AbundanciaAnual / AbundanciaReferencia$
+
+La abundancia relativa queda definida como la abundancia anual en proporción a la abundancia de referencia. Con ello evaluaremos la tendencia, la cual queda definida como la tasa anual de cambio en la abundancia de la población (Thompson & La Sorte, 2008)
+
+Como primer paso inciaremos los cálculos para la abundancia de referencia.
+
+Definimos los años para los cuales vamos a trabajar:
+
+```{r}
+start_year <- 1978
+years <- 1978:2022
+```
+Sabemos que la baseline para cada especie debe fijarse en un tamaño de población que se considere deseable para cada especie individual dentro de cada zona geográfica.
+
+En la guideline aparecen 3 opciones para la estimación de la abundancia de referencia: 
+
+i) Referencia histórica: Definida para un punto en el pasado anterior al inicio de la serie temporal
+
+ii) Nivel de referencia: Nivel adecuado para un buen estado de conservación de la especie donde se esperaría que estuviera el tamaño de la población si los impactos antropogénicos fueran insignificantes.
+
+iii) Nivel Inicial de la serie temporal: Valor estimado mediante un Modelo Linear Generalizado (GLM) o mediante la media de la abundancia de los 10 primeros años ignorando los datos faltantes. En caso de que el GLM devuelva significación estadísitica sobre la tendencia (valor p de regresión ≤ 0,05), se utlilizará el valor predicho por el modelo. Si no existe significancia estadística se utilizará la segunda opción
+
+Para nuestro caso como no disponemos de las dos primeras opciones, optaremos por la tercera.
+
+Definimos el rango para los 10 primeros años
+
+```{r}
+year_range <- 1978:2022
+
+```
+
+Extraemos los valores de abundancia para cada uno de los años:
+
+```{r}
+total_year_counts_o <- c(df$ocp_o)
+total_year_counts <- c(df$ocp)
+
+year_counts <- total_year_counts
+
+baseline <- data.frame(year_range, year_counts)
+
+species_name <- "Gulosus aristotelis"
+
+```
+
+Siguiendo los pasos de la guideline, ajustaremos un modelo de regresión de Poisson a los datos para la especie a cada unidad de muestreo. En nuestro modelo, la variable respuesta serán cada uno de los recuentos obtenidos anualmete e incluiremos el año como un efecto fijo categórico. La principal finalidad es estimar la población de referencia para los 10 primeros años de la serie temporal.
+
+Lon modelos lineales generalizados (GLM) fueron introducidos por Nelder & Wedderburn (1972), es un tipo de modelo que es definido especificando dos componentes. La variable respuesta debe ser de un miembro de la familia de distribuciones exponenciales (generalmente Normal or Gaussiana, Poisson o Binomial ) y la función de enlace describe cómo se relacionan la media de la respuesta y una combinación lineal de predictores (Faraway, 2016).
+
+
+La fórmula matemática general del Modelo de Regresión de Poisson es:
+
+$log(Y)= β_1X_1+ β_2X_2...+β_pX_p$
+
+$y$ es la variable respuesta, numero de parejas reproductoras anuales
+$α$ y $β$: son coeficientes numéricos que hacen referencia a la intersección
+$X$ es la variable predictora/explicativa, años como variable categórica
+
+La principal asunción del modelo de regresión de poisson es la igualdad entre media $μ$ y la varianza $λ$ 
+
+$µ_x=λ$
+
+Procederemos a aplicar el Modelo Linear Generalizado para Poisson, aplicando la función `glm` y estableciedo la familia de la disrtibución indicada en `family`.
+
+```{r}
+year_counts<- as.integer(year_counts)
+year_range<- as.integer(year_range)
+
+year_counts1<- as.integer(year_counts[-35])
+year_range1<-as.integer(year_range[-35])
+
+
+mod = glm(year_counts1~year_range1, data = baseline, family = "poisson")
+
+summary(mod)
+pval <- round(summary(mod)$coefficients[2, 4], 3)
+
+```
+La Null deviance es la desviación para el modelo que no depende de ninguna variable.
+
+La Residual deviance es la diferencia entre la desviaciónn del modelo que no depende de
+ninguna variable menos la correspondiente al modelo que incluye a la variable explicativa. 
+
+La diferencia entre ambas se distribuye como una distribución chi-cuadrado con 1 grado de
+libertad y permite contrastar si el coeficiente de los años puede considerarse nulo
+
+```{r}
+
+a<- mod$null.deviance - mod$deviance
+1 -pchisq(a, 1)
+
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(mod)
+```
+
+
+```{r}
+dispersiontest(mod)
+```
+
+Intentaremos con la familia binomial negativa:
+
+```{r}
+
+mod_nb = glm.nb(year_counts1~year_range1, data = baseline)
+
+summary(mod_nb)
+```
+```{r}
+par(mfrow=c(2,2))
+plot(mod_nb)
+
+```
+
+Podemos observar que tiene un menor ajuste que el anterior modelo `mod`por tanto descartaremos el ajuste mediante la distribución binomial negativa.
+
+Todo ello nos lleva a tener que descartar el método de establecimiento del valor de la abuncancia de mediante GLM.
+
+En este caso procederemos a utilizar el método de la media
+
+```{r}
+year_range <- 1978:1987
+
+total_year_counts_o <- c(df$ocp_o)
+
+year_counts <- total_year_counts_o[1:10]
+
+baseline <- data.frame(year_range, year_counts)
+baseline_count<- mean(year_counts, na.rm = TRUE)
+predicted_count <- rep(baseline_count, 10)
+
+```
+
+Establecemos los valores para obtener el modelo de grafico establecido para el criterio B1:
+
+```{r}
+top_value <- rep(1.3, length(total_year_counts)) #Valor superior de referencia
+bottom_value <- rep(0.7, length(total_year_counts))#Valor inferior de referencia para especies que ponen mas de 1 huevo
+baseline_norm_plot <- rep(1,length(total_year_counts)) #Baseline
+relative_abundance <- total_year_counts / baseline_count #Abundancia relativa
+rolling_mean <- rep(NA, length(total_year_counts)) #Media movil
+
+```
+
+```{r}
+for (i in 1:(length(total_year_counts)-5)){
+  #print(i)
+  considered <- total_year_counts[i:(i+5)]
+  #print(considered)
+  rolling_mean[i+5] <- mean(considered[!is.na(considered)])
+}
+
+```
+Establecemos la media móvil teniendo en cuenta la baseline y compilamos el data frame con los datos de interés:
+
+```{r}
+rolling_mean_baselined <- rolling_mean/baseline_count
+
+for_gg <- data.frame(relative_abundance,bottom_value,baseline_norm_plot,top_value,rolling_mean_baselined, years)
+
+```
+
+Ahora representaremos el plot 
+```{r}
+plot(years,relative_abundance,type="p",ylab="Relative abundance index",xlab="Year",yaxs="i",xaxs="i",bty="l",xlim=c(min(years)-0.5,max(years+0.5)),ylim=c(0,1.9),cex.axis=1.9,cex.lab=1.5, col = "red")
+lines(years,bottom_value,lwd=1,col="black")
+lines(years,baseline_norm_plot,lwd = 1.3, col = "green")
+lines(years,top_value,lwd=1,col="black")
+lines(years,rolling_mean_baselined,lwd=2,col="grey")
+points(2010,1,lwd=2,col="green",label = "baseline value")
+points(2022,rolling_mean_baselined[length(total_year_counts)],lwd=2,col="blue")
+library(stringr)
+legend("bottomleft",legend=c(str_glue("Baseline value  (N = {baseline_count})"), "Six-year running mean assessment"),lty=1,lwd=2,col=c("green","grey"),bty="n",cex=1)
+
+```
+
+Obtenemos la figura para la tendencia de la abundancia relativa de nidos ocupados, es decir, la tendencia del número de parejas reproductoras para la especien en la colonia objeto de estudio para los años 1978 a 2022.
+
+Los puntos rojos representan los valores anuales de abundancia relativa y la línea gris representa la media geométrica móvil. La línea verde indica la baseline calculada a partir de los diez primeros años de datos. Las líneas superiores e inferiores negras indican 1,3 y 0,7 respectivamente, estos valores han sido establecidos por el criterio OSPAR para la evaliación del estado de conservación, en este caso valores superiores a 1,3 indican un estado de conservación favorable y valores inferiores a 0,7 implican un estado de conservacón desfavorable. El valor obtenido a partir de la media de los últimos seis años de la serie temporal se representa como un punto azul con el cual podremos evaluar el estado de conservación de la especie en la actualidad (Fuente OSPAR QSR2023)
+
+
+
+```{r}
+data<- read_excel("Gul_ari_berlengas1.xlsx")
+
+data$Year<- data$Año
+data$BP<- data$Produtividade
+data$Plot_size<- data$`N ninhos ocupados`
+data<- data.frame(data$Year, data$BP, data$Plot_size)
+data$data.BP<- na_interpolation(data$data.BP, option = "linear")
+data<- data[35:45,]
+data$Year<- data$data.Year
+data$BP<- data$data.BP
+data$Plot_size<- data$data.Plot_size
+data$data.Year= NULL
+data$data.BP= NULL
+data$data.Plot_size=NULL
+data
+
+```
+Según la "Guía de indicadores comunes CEMP de OSPAR" (OSPAR CEMP Guideline) para el indicador B3 Marine Birds breeding productivity (OSPAR, 2017b) en primer lugar se debe *Estimar la productividad reproductora media anual (número de pollos nacidos por pareja) y su error estándar. El método tiene en cuenta los datos que faltan en lugares concretos y genera una serie temporal reproducible.*
+
+Para ello seleccionaremos un modelo para series temporales no estacionarias, es decir, donde la media no es constante a lo largo del tiempo. Estos modelos siguen la estructura:
+
+$Yt = μt + Xt$
+
+Donde $μt$ es una función de media no constante y $Xt$ es una serie estacionaria de media cero (Cryer,2008)
+
+Por ello, en primer lugar lo que haremos será ajustar un modelo ARIMA (integrated autoregressive moving average models):
+
+$(1-ϕ 1L-ϕ 2L^2-...-ϕpL^p)(1-L)^dXt = c + (1+θ1L+θ2L^2+...+θq*L^q)et$
+
+donde:
+
+$L$ es el operador de rezago o de cambio (backshift operator)
+$ϕ1, ϕ2$ son los coeficientes de auto regresión (AR)
+$θ1, θ2$ son los coeficientes de las medias móviles (MA)
+$d$ es el orden de integración
+$c$ es la constante
+$et$ es el error aleatorio en el tiempo t
+
+Dicho modelo se ajusta mediante la función `arima`, es este caso para el modelo ARIMA(*p,d,q*) podemos ajustarlo mediante `arima(1,1,1)`, que significa que dicho modelo se ajusta con un término auto regresivo de orden 1, un término de media móvil de orden 1 y que la serie temporal se ha diferenciado una vez para hacerla estacionaria.
+
+
+```{r}
+# Cargar la serie temporal
+datats <- ts(data$BP , start = c(2012, 1), frequency = 1)
+
+# Ajustar el modelo ARIMA
+model <- arima(datats , order = c(1, 1, 1))
+summary(model)
+
+
+```
+Obtenermos los residuos para el modelo:
+
+```{r}
+res <- resid(model)
+```
+
+Y obtenemos los errores standards de cada una de las observaciones de productividad par ala especie, para ello aplicaremos la siguiente fórmula, teniendo en cuenta que *"El error estándar de la predicción se puede estimar como la desviación estándar de los residuos multiplicada por la raíz cuadrada de uno más el cuadrado del parámetro de media móvil invertido"* (Pagano & Gauvreau, 2000)
+
+
+
+
+```{r}
+se <- sqrt(model$sigma2 * (1 + filter(res^2, rev(model$ma), method="conv", sides=1)))
+se
+```
+
+Obtenemos los grados de libertad sabiendo que si tenemos un modelo ARIMA (1,1,1) ajustado a una serie temporal con 12 observaciones, entonces el número de grados de libertad para el modelo sería:
+  
+Número total de observaciones: 12
+Número de parámetros estimados: 3 (el coeficiente AR, el coeficiente MA y la varianza del error)
+
+Por lo tanto, el número de grados de libertad sería 9 (12 - 3).
+
+Incorporamos los resultados a nuestra base de datos:
+
+```{r}
+df <- rep(9, nrow(data))
+data$se<- se
+data <- cbind(data, df)
+```
+
+Ahora representaremos nuestros valores de productividad para cada uno de los años para los cuales hay valores junto con la media móvil obtenida para 6 años anteriores. Como nota cabe decir que no se dispone de los intervalos de confianza para la media anual, debido a que nuestro estudio se ha realizado para una colonia y los valores de media estimados corresponden a un dato único para toda la Isla de la Berlenga.
+
+
+
+```{r}
+meanBP<- data
+Years <- data.frame(Year=seq(min(data$Year),max(data$Year)))
+meanBP <- merge(Years,meanBP,all=T)
+
+BPind <- vector(length=length(data$BP)-5)
+SEind <- vector(length=length(data$BP)-5)
+
+for (j in 1:length(BPind)){
+  BPind[j] <- mean(data$BP[j:(j+5)],na.rm=T)
+  SEind[j] <- sqrt(var(data$BP[j:(j+5)]))
+}
+```
+```{r}
+
+
+plot(data$Year, data$BP, type="n",ylab="Productividad reproductora",xlab="Año",yaxs="i",xaxs="i",bty="l",xlim=c(min(data$Year)-0.5,max(data$Year+0.5)),ylim=c(0,max(data$BP + 1,na.rm=T)),cex.axis=1.5,cex.lab=1.5,main=  "Cormorán Moñudo, Berlengas")
+lines(data$Year,data$BP ,lwd=2,col="red")
+points(data$Year,data$BP,lwd=2,col="black")
+lines(data$Year,data$BP,lwd=1,col="red",lty="dashed")
+lines(data$Year,data$BP,lwd=1,col="red",lty="dashed")
+lines(data$Year[6:length(data$Year)],BPind,lwd=2,col="black")
+legend("bottomleft",legend=c("Media anual","Media móvil para 6 años"),lty=1,lwd=2,col=c("red","black"),bty="n",cex=1)
+
+
+```
+Continuaremos nuestro estudio construyendo un modelo básico poblacional, como norma general, una población $N$ está determinada por por el número de individuos que nacen en una población $B$, número de individuos que mueren en la población $D$, individuos que inmigran $I$ e individuos que emigran $E$. Por tanto, un modelo básico determinado para un intervalo de tiempo $t$ vendía definido como:
+
+$Nt+1=Nt+B+I–D–E$
+
+Para nuestro caso ignoraremos la emigración e inmigratorio debido a la complejidad de del estudio y a la falta de datos disponibles, no obstante diremos que ignorar estos términos puede dar lugar a una infra estimación de la supervivencia (Pasinelli et al., 2011), aún más acentuada en los individuos no reproductores debido a su mayor predisposición a la dispersión.
+
+Siguiendo la Guideline para el criterio B3:
+
+*"Construiremos un modelo de matriz demográfica de referencia simplificado (basado en las hembras) para la especie. El número de clases de edad en el modelo y los valores de partida para la supervivencia de las diferentes clases de edad se basan en conocimientos de expertos y/o revisiones bibliográficas (principalmente Horswill y Robinson, 2015). El modelo asume que todos los individuos comienzan a reproducirse a una edad determinada, que la productividad reproductora y la supervivencia no cambian después de esta edad (es decir, no hay senescencia), que el 90% de todos los adultos intentan reproducirse cada año y, por lo tanto, se incluyen en las estimaciones de productividad reproductora, y que la proporción de sexos es 1:1".*
+
+Estableceremos 4 clases de edad.
+
+Mediante las clases de edad y sus respectivos parámetros poblacionales construiremos la matriz de proyección, dicha matriz será la base para calcular el número o proporción de individuos que sobrevivirá y por tanto pasará a la siguiente clase de edad en el año venidero incluyendo la edad reproductora, donde $f_4$ representa la fertilidad para hembras adultas y $p_1$, $p_2$, $p_3$, $p_a$, la supervivencia para las clases de edad 1, 2 3 y adultos reproductores.
+
+
+
+$$
+\begin{bmatrix}
+N_{0,t+1} \\
+N_{1,t+1} \\
+N_{2,t+1} \\
+N_{3,t+1}
+\end{bmatrix} =
+\begin{bmatrix}
+0 & 0 & 0 & f_4 \\
+p_1 & 0 & 0 & 0 \\
+0 & p_2 & 0 & 0 \\
+0 & 0 & p_3 & p_a
+\end{bmatrix}
+\begin{bmatrix}
+N_{0,t} \\
+N_{1,t} \\
+N_{2,t} \\
+N_{3,t}
+\end{bmatrix}
+$$
+
+$f4$ será obtenido mediante:
+
+$$
+f_4 = \sigma p \gamma_4 s_0
+$$
+Donde:
+
+$f_4$ es la tasa de fecundidad de la clase de edad 4.
+$\sigma$ es la proporción de sexos o sex-ratio como probabilidad de que un individuo sea hembra.
+$p$ es la tasa de fecundidad DEFINIDA COMO
+$\gamma_4$ es la propensión a la reproducción de la clase de edad 4 (la probabilidad de que una hembra de la clase de edad 4 se reproduzca en un año).
+$s_0$ es la tasa de supervivencia de la clase de edad s0.
+
+
+
+```{r}
+# Define dimensions of matrix, i.e. number of age classes
+m <- matrix(0,nrow=4,ncol=4)
+
+```
+```{r}
+#Definimos los valores de las variables demográficas:
+
+#Supervivencia para cada clase de edad
+
+s0 <- 0.513 #females mean survival during the first year at sea (S0) DOI:10.1890/05-0514
+s1 <- 0.513
+s2 <- 0.737
+s3 <- 0.724 
+sa <- 0.858
+```
+```{r}
+#Propensión a la reproducción
+
+gamma4 <- 0.9
+
+# Fecundidad
+
+p<-(mean(0.65,0.71,0.67,0.63,0.67)*s0)
+p
+#El éxito reproductor corresponde a datos obtenidos en la colonia entre 2018 y 2022
+
+
+# Prorporción de sexos
+sigma <- 0.5
+
+#Fertilidad
+#Fertility, i.e. number of surviving female offspring per breeding-age female
+
+f4 <- sigma*p*gamma4*s0
+
+```
+```{r}
+# Definimos los elementos para la matriz
+
+m[1,4] <- f4
+m[2,1] <- s1
+m[3,2] <- s2
+m[4,3] <- s3
+m[4,4] <- sa
+
+```
+Definiremos los elementos de la matriz:
+
+$$
+m = \begin{bmatrix}
+0 & 0 & 0 & f4 \\
+s1 & 0 & 0 & 0 \\
+0 & s2 & 0 & 0 \\
+0 & 0 & s3 & sa \\
+\end{bmatrix}
+$$
+Mediante el package `popbio` (Stubben & Milligan, 2007) estableceremos las propiedades básicas de la matriz, este package nos permite Construir y analizar modelos de matrices de proyección a partir de un estudio demográfico de individuos marcados clasificados por edad o etapa, consiste en una traducción al R del código que se encuentra en Caswell (2001) o en Morris y Doak (2002). En nuestro caso como no tenemos individuos marcados por los parámetros poblacionales se obtibieron a partir de  bibliografía de referencia. Utilizaremos la función `stable.stage`para establecer la estructura de la matriz con las diferentes clases de edad, `lambda`para calcular la tasa finita de crecimiento de la población, también aplicamos la función `generation.time`para obtener el tiempo generacional.
+
+El tiempo generacional ($\overline{T}$) se define como: 
+
+$$ \overline{T} = \sum_{i=1}^{\infty} il_i f_i\lambda^{-i} $$
+Donde:
+
+$l_i$ es la supervivencia desde el nacimiento hasta la edad $i$, calculada como $ l_i = \prod_{j=1}^{i} s_j $ donde $s_j$ es la supervivencia desde $j-1$ a $j$, $f_i$ es la media anual de fecundidad a edad $i$, $\lambda$ es la tasa de crecimiento de la población. (Leslie, 1966; Niel and Lebreton, 2005; Gaillard et al., 2005 en Dillingham, 2010)
+
+
+```{r}
+# Propiedades básicas de la matriz
+# Distribución estable de las clases de edad
+(w <- stable.stage(m))
+# Tasa de crecimiento asintotica
+(lambda <- lambda(m))
+# Tiempo de generacion
+(GT <- generation.time(m))
+
+```
+Posteriormente necesitaremos modelar la variabilidad en las tasas de supervivencia incorporando nuestros valores específicos de supervivencia y desviación estándar. Para ello definiremos la función `beta.draws`para poder calcular nuestros $α$ y $β$ específicos y poder incorporarlos a la función `rbeta` del paquete base de R (R Core Team, 2021). La función ha sido extraída de la Guideline para el indicador.
+
+```{r}
+beta.draws <- function(p, sdp, draws) {
+  varp <- sdp^2
+  alpha <- p*(((p*(1-p))/varp) - 1)
+  beta <- (1-p)*(((p*(1-p))/varp) - 1)
+  rbeta(draws,alpha,beta)
+}
+```
+Para los valores de desviación estándar se utilizarán los valores de referencia que usualmente son válidos para la mayoría de las especies (DOCUMENTO REFERENCIA SCRIPT)
+
+```{r}
+sds0 <- 0.246
+sds1 <- 0.246
+sds2 <- 0.181
+sds3 <- 0.181
+sdsa <- 0.194 
+```
+
+Procederemos a obtener la media movil retrospectiva de 6 años para nuestra productividad y cargamos los datos de abundancia relativa para utilizarlo en los siguientes pasos
+```{r}
+##############################################
+#  6: integramos el modelo a B1 e indicador  #
+##############################################
+
+# 6.1 Seleccionamos el indicador de abundancia para los años de interés
+
+
+ind_abund <- relative_abundance
+data$emmean<- data$BP
+
+meanBP<- data [2:11,]
+meanBP$SE<- meanBP$se
+
+# 6.2 Re-calculamos la media para 6 años retrospectiva
+
+overallmeanBP <- mean(meanBP$emmean,na.rm=T)
+overallmeanSE <- mean(meanBP$SE,na.rm=T)
+for(k in 1:nrow(meanBP)){
+  if(is.na(meanBP$df[k])) meanBP$emmean[k] <- overallmeanBP
+  if(is.na(meanBP$df[k])) meanBP$SE[k] <- overallmeanSE
+}
+
+BPind <- vector(length=length(meanBP$emmean)-5)
+for (j in 1:length(BPind)){
+  BPind[j] <- mean(meanBP$emmean[j:(j+5)],na.rm=T)
+}
+
+
+```
+
+
+Estableceremos los valores de supervivencia que serán ajustados posteriormente mediante los resultados de las simulaciones, comparando el valor simulado con el observado hasta igualarlo.
+
+A través de 1000 simulaciones procederemos a calcular el crecimiento estatocastico de la población mediante la función definida en el script referencia de la guideline con las siguientes entradas:
+
+`sims`: Número de simulaciones que se realizarán.
+
+`ww`: Matriz tridimensional (número de clases de edad + 1) x (longitud de w) x (sims) para almacenar las proyecciones estocásticas de la población. Cada simulación comienza con la distribución estable de edades de la población y se proyecta en función del éxito reproductivo anual observado en cada clase de edad.
+
+`w`: Vector que indica el número de individuos en cada clase de edad en el año actual.
+
+`meanBP`: Data frame que contiene la media y el error estándar (SE) de la tasa de éxito reproductivo.
+
+`m`: Matriz de Leslie que se utiliza para proyectar la población de un año a otro.
+
+`p2`: Tasa de éxito reproductivo(extraída de una distribución normal con la media y SE definidos
+.
+`f4`: Tasa de fertilidad de la clase de edad 4, calculada a partir de la proporción de sexos, la tasa de supervivencia y la tasa de éxito reproductivo, como ha sido definida anteriormente.
+
+
+Siguiendo los siguientes pasos:
+
+- i)Establecemos el número de simulaciones `sims`, ii)creamos la matriz `ww` para contener proyecciones estocásticas de población, iii)iniciar cada simulación con una distribución de edad estable, iv)proyectamos. v) Pasaremos a extraer la población reproductora simulada vi)obtenemos la tasa de crecimiento estocástico simulada (lambda) para cada una de las simulaciones.
+
+
+```{r}
+
+# 6.3 Aquí es donde se ajustan los valores de la supervivencia específica por edad
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# Ajustar el modelo al crecimiento observado - ajustar la supervivencia
+s0 <- 0.600 # 0.79 # basic value
+s1 <-  0.600 # 0.845 # basic value
+s2 <- 0.770 # valle value
+s3 <- 0.891 # valle value
+sa <- 0.895 # basic value
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+# 6.4 Calcular la tasa de crecimiento estocástico a partir del modelo de simulación
+
+# Número de simulaciones
+sims <- 10000
+
+# creamos la matriz `para contener proyecciones estocásticas de población
+ww <- array(dim=c(nrow(meanBP)+1,length(w),sims))
+
+# iniciar cada simulación con una distribución de edad estable, y proyectamos
+for (i in 1:sims){
+  ww[1,,i] <- w
+  # Projectar con el éxito reproductor anual
+  # Valores extraídos de una distribución normal con media y SE observadas
+  for(j in 1:nrow(meanBP)){
+    m1 <- m
+    # Fecundidad
+    p2 <- max(0,rnorm(1,meanBP$emmean[j],meanBP$SE[j]))
+    # Fertilidad
+    f4 <- sigma*p2*gamma4*s0
+    # Definimos los elementos de la matriz
+    m1[1,4] <- f4
+    m1[2,1] <- s1
+    m1[3,2] <- s2
+    m1[4,3] <- s3
+    m1[4,4] <- sa
+    # Proyectamos 
+    ww[j+1,,i] <- m1 %*% ww[j,,i]
+  }
+}
+
+# Extraemos la población reproductora simulada
+breedpop <- ww[,length(w),]
+
+# Simulación estocástica de lambda calculada para cada simulación 
+
+simgrowth <- (breedpop[nrow(breedpop),]/breedpop[1,])^(1/(nrow(breedpop)-1))
+
+```
+A partir del indicador B1 de abundancia obtendremos la tasa de crecimiento observada. Para ello usaremos una regresión log-linear para el tiempo 2013 a 2022,
+
+```{r}
+OYear <- 2013:2022
+Index <- ind_abund[36:45]
+model <- lm(log(Index) ~ OYear)
+out <- summary(model)
+out
+```
+```{r}
+visreg(model)
+
+```
+
+Continuaremos obteniendo la distribución de la tasa de crecimiento observada, y la transformaremos a escala real utilizando los coeficientes de la regresión log´lineal anterior, posteriormente compararemos ambas de manera visual mediante un box-plot, retrocederemos a los valores establecidos de supervivencia para cada clase de edad establecidos anteriormente y los modificaremos para ajustar ambos hasta obtener una aproximación inferior al 0,001% entre ambas tasas de crecimiento. Es de importancia destacar que se supone igualdad de supervivencia entre hembras y machos por lo que p0 y p1 serán iguales.
+
+
+```{r}
+# Obtenemos la distribucion de la tasa de crecimiento observada y la retransformamos a escala real
+obsgrowth <- array(dim=sims)
+realgrowth <- array(dim=sims)
+for (i in 1:sims){
+  obsgrowth[i] <- rnorm(1,out$coefficients[2,1],out$coefficients[2,2])
+  realgrowth[i] <- exp(obsgrowth[i])
+}
+
+# medias de las tasas de crecimiento
+mean(realgrowth)
+mean(simgrowth)
+
+# comparacion grafica de las tasas de crecimiento
+par(mfrow=c(1,2))
+boxplot(simgrowth,main="Simulated",ylab="Population growth rate",ylim=c(min(realgrowth),max(realgrowth)))
+boxplot(realgrowth,main="Observed")
+
+```
+Ajustaremos la fecundidad a 1 con una tolerancia de 0.001
+
+```{r}
+#fecundidad
+p2 <- 1.003 # 0.69 # basic value
+#fertilidad
+f4 <- sigma*p2*gamma4*s0
+#Definimos los elementos dela matriz
+m1[1,4] <- f4
+
+(lambda(m1))
+
+```
+Finalmente construiremos nuestro indicador, primero calcularemos lus umbrales del grado de amenaza según los criterios de la IUCN; establecido como una una reducción observada, estimada, inferida o sospechada de la población  en tres generaciones, reducción ≥ 80% para su clasificación como en Peligro Crítico (CR), reducción ≥ 50% en Peligro (EN) y reducción ≥30% para Vulnerable (VU), y donde esa reducción, o sus causas, pueden no haber cesado, O pueden no ser entendidas, o no ser reversibles, basándose en un índice de abundancia apropiado para el taxón (IUCN, 2012). Continuaremos obteniendo la tasa de crecimiento anual de la población mediante el modelo poblacional obtenido y fianalmento lo graficaremos teniendo en cuenta los ubrales obtenidos anteriormente.
+
+Para ello comenzaremos por calcular los umbrales para la tasa de crecimiento proyectada en nuestro modelo poblacional, con los límites aproximados de confianza.
+
+```{r}
+# 6.7 Calculamos los umbrales oara la tasa de crecimiento proyectada con intervalos de conficanza
+
+# Calculamos los umbrales
+
+# Tiempo de generación
+(GTmean <- generation.time(m1))
+# Umbrales IUCN
+(Threshold_VU <- (1-0.3)^(1/(3*GTmean)))
+(Threshold_EN <- (1-0.5)^(1/(3*GTmean)))
+(Threshold_CR <- (1-0.8)^(1/(3*GTmean)))
+
+```
+```{r}
+# Versión estocastica del baseline model
+#  Obtenemos los IC de los umbrales
+
+# Prepare arrays
+T_VU <- array(dim=sims)
+T_EN <- array(dim=sims)
+T_CR <- array(dim=sims)
+
+
+```
+```{r}
+# Corremos el modelo con draws aleatorias para supervivencia
+for(j in 1:sims) {
+  # Definimos la dimension de la matriz
+  m3 <- m1
+  # Definimos las variables demograficas
+  # Supervivencia
+  
+  #rbeta(1, 0.246,0.72)
+  s0draw <- beta.draws(s0,sds0,1)
+  s1draw <- beta.draws(s1,sds1,1)
+  s2draw <- beta.draws(s2,sds2,1)
+  s3draw <- beta.draws(s3,sds3,1)
+  sadraw <- beta.draws(sa,sdsa,1)
+  # Fertilidad
+  f4 <- sigma*p2*gamma4*s0draw
+  # Definimos elementos de la matriz
+  m3[1,4] <- f4
+  m3[2,1] <- s1draw
+  m3[3,2] <- s2draw
+  m3[4,3] <- s3draw
+  m3[4,4] <- sadraw
+  # Tiempo de generación
+  GT <- generation.time(m3)
+  # Umbrales IUCN
+  T_VU[j] <- (1-0.3)^(1/(3*GT))
+  T_EN[j] <- (1-0.5)^(1/(3*GT))
+  T_CR[j] <- (1-0.8)^(1/(3*GT))
+}
+
+
+```
+```{r}
+# Extraemos los intervalos de confianza
+T_VU_CL <- quantile(T_VU,probs=c(0.025,0.975),na.rm=T)
+T_EN_CL <- quantile(T_EN,probs=c(0.025,0.975),na.rm=T)
+T_CR_CL <- quantile(T_CR,probs=c(0.025,0.975),na.rm=T)
+
+
+```
+```{r}
+# 6.8 Calculamos la tasa de crecimiento proyectada
+
+# Preparamos el vector con las tasas
+projlambda <- vector(mode="numeric",length=length(BPind))
+
+# Bucle sobre los valores de BPind (productividad reproductora media de 6 años)
+#  Para calcular el indicador de la serie temporal
+for(i in 1:length(BPind)){
+  # Define dimensions of matrix
+  m2 <- m1
+  # Fecundidad
+  p <- BPind[i]
+  # Fertilidad
+  f4 <- sigma*p*gamma4*s0
+  #Elementos matriz
+  m2[1,4] <- f4
+  # Tasa de crecimiento asintotica
+  projlambda[i] <- lambda(m2)
+}
+
+```
+```{r}
+# Cerramos los graficos anteriores
+graphics.off()
+
+```
+```{r}
+
+# 6.9 Plot tasa de crecimiento observada y comparacion con los umbrales
+
+
+# Set up plot
+pyear <- 2018:2022 #2018:2022
+par(mar=c(5.1,4.1,6.1,2.1),xpd=T)
+
+plot(pyear,projlambda,type="b",bty="l",lwd = 2,xlab="Años",ylab="T. Crecimiento Esperada",ylim=c(min(min(projlambda),Threshold_CR-0.0075),max(max(projlambda),1.01)),cex.axis=1,cex.lab=1,main="Cormorán Moñudo en Berlengas")
+limits <- par("usr")
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_VU,limits[2],limits[4],col="green",border=NA)
+#if(Threshold_VU>limits[3])
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_EN,limits[2],Threshold_VU,col="yellow",border=NA)
+#if(Threshold_EN>limits[3])
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_CR,limits[2],Threshold_EN,col="orange",border=NA)
+#if(Threshold_CR>limits[3])
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_CR-0.01,limits[2],Threshold_CR,col="red",border=NA)
+lines(pyear,projlambda,lwd=2)
+lines(pyear,projlambda,type="b",lwd=2)
+legtext <- c("Encima umbral","VU","EN","CR")
+legend("top", legtext,fill=c("green","yellow","orange","red"),horiz=T,inset=c(0,-0.22),bty="n",x.intersp=0.2)
+par(xpd=F)
+abline(h=1,lwd = 1.6)
+
+```
+```{r}
+# 6.10 Create output data set
+
+#Variables indicadoras para el umbral (pass = 1)
+PassVU <- ifelse(projlambda>Threshold_VU,1,0)
+PassEN <- ifelse(projlambda>Threshold_EN,1,0)
+PassCR <- ifelse(projlambda>Threshold_CR,1,0)
+
+Results <- data.frame(pyear,BPind,projlambda,PassVU,PassEN,PassCR)
+colnames(Results) <- c("Año","Mean BP","lambda_Esperada","PassVU","PassEN","PassCR")
+Results$Species <- rep("Gulosus aristotelis", 5)
+#Results$Guild <- species$feeding_guild
+Results$Region <- "IV"
+Results$Threshold_VU <- Threshold_VU
+Results$Threshold_EN <- Threshold_EN
+Results$Threshold_CR <- Threshold_CR
+Results$Generation_Time <- GTmean
+
+
+```
+```{r}
+# Mostramos el output 
+Results
+```
+
+```{r}
+an<- c(2018:2022)
+t<- c(1.022908, 1.022151, 1.018841, 1.014692, 1.011422)
+
+ta<- data.frame(an,t)
+
+datata <- ts(ta$t , start = c(2018, 1), frequency = 1)
+
+# Ajustar el modelo ARIMA
+modelta <- arima(datata , order = c(1, 1, 1))
+
+library(forecast)
+forecast_data <- forecast(modelta, h = 60)
+summary(model)
+foredata<-data.frame(forecast_data)
+foredata<- foredata[1:12,]
+```
+
+```{r}
+
+projforee<- c(foredata$Point.Forecast)
+projforea<- c(foredata$Hi.95)
+projforeb<- c(foredata$Lo.95)
+pyear <- 2023:2034 #2018:2022
+par(mar=c(5.1,4.1,6.1,2.1),xpd=T)
+
+plot(pyear,projforea,type="b",bty="l",lwd = 2,xlab="Años",ylab="T. Crecimiento Esperada",ylim=c(min(min(projforea),Threshold_CR-0.0075),max(max(projforea),1.01)),cex.axis=1,cex.lab=1,main="Cormorán Moñudo en Berlengas")
+mtext("Predicción para una generación ~12 años", side = 3, line = 1, cex = 0.6, padj = -1.5)
+limits <- par("usr")
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_VU,limits[2],limits[4],col="green",border=NA)
+#if(Threshold_VU>limits[3])
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_EN,limits[2],Threshold_VU,col="yellow",border=NA)
+#if(Threshold_EN>limits[3])
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_CR,limits[2],Threshold_EN,col="orange",border=NA)
+#if(Threshold_CR>limits[3])
+rect(limits[1]+0.001*(limits[2]-limits[1]),Threshold_CR-0.01,limits[2],Threshold_CR,col="red",border=NA)
+lines(pyear,projforea,lwd=2)
+lines(pyear,projforee,lwd=2)
+lines(pyear,projforeb,lwd=2)
+legtext <- c("Encima umbral","VU","EN","CR")
+legend("top", legtext,fill=c("green","yellow","orange","red"),horiz=T,inset=c(0,-0.22),bty="n",x.intersp=0.2)
+par(xpd=F)
+abline(h=1,lwd = 1.6)
+```
+
